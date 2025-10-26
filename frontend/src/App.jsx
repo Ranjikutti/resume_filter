@@ -3,7 +3,10 @@ import axios from 'axios';
 import './App.css';
 
 function App() {
-  // New state to hold the detailed form data
+  // --- NEW: State to control which mode is active ---
+  const [mode, setMode] = useState('manual'); // 'manual' or 'upload'
+
+  // State for Manual Form
   const [formData, setFormData] = useState({
     experience: 2,
     candidateSkills: 'React, Node.js, MongoDB',
@@ -13,123 +16,157 @@ function App() {
     projects: 4,
   });
 
+  // State for Upload Form
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [requiredSkillsForUpload, setRequiredSkillsForUpload] = useState('React, Node.js, Python');
+  const [extractedData, setExtractedData] = useState(null);
+
+  // Common State
   const [score, setScore] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Function to handle changes in the input fields
-  const handleChange = (e) => {
+  // --- MANUAL FORM LOGIC (Mostly Unchanged) ---
+  const handleManualChange = (e) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
-      // Use parseFloat for numbers that can be decimals, otherwise use value
       [name]: (name === 'cgpa') ? parseFloat(value) : (['experience', 'education', 'projects'].includes(name) ? Number(value) : value),
     });
   };
 
-  // --- NEW LOGIC: Calculate Skill Match Percentage ---
   const calculateSkillMatch = (candidateSkills, requiredSkills) => {
     const candidateSet = new Set(candidateSkills.split(',').map(skill => skill.trim().toLowerCase()));
     const requiredSet = new Set(requiredSkills.split(',').map(skill => skill.trim().toLowerCase()));
-    
     if (requiredSet.size === 0) return 100;
-
     let matchCount = 0;
-    for (const skill of candidateSet) {
-      if (requiredSet.has(skill)) {
-        matchCount++;
-      }
-    }
+    candidateSet.forEach(skill => {
+      if (requiredSet.has(skill)) matchCount++;
+    });
     return Math.round((matchCount / requiredSet.size) * 100);
   };
 
-
-  // Function to handle form submission
-  const handleSubmit = async (e) => {
+  const handleManualSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setScore(null);
+    clearResults();
     setIsLoading(true);
-
-    // Calculate the skill match percentage
     const skillMatchPercentage = calculateSkillMatch(formData.candidateSkills, formData.requiredSkills);
-
-    // --- THIS IS THE PART THAT WAS UPDATED ---
-    // Prepare data to send to the backend, including the new fields
-    const apiPayload = {
-      experience: formData.experience,
-      skill_match: skillMatchPercentage,
-      education: formData.education,
-      cgpa: formData.cgpa,         // This line was added
-      projects: formData.projects,   // This line was added
-    };
+    const apiPayload = { ...formData, skill_match: skillMatchPercentage };
 
     try {
       const response = await axios.post('http://localhost:5000/predict', apiPayload);
       setScore(response.data.fit_score);
     } catch (err) {
-      setError('Failed to get a response from the server. Is it running?');
-      console.error(err);
+      handleApiError(err);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // --- UPLOAD FORM LOGIC (NEW) ---
+  const handleFileChange = (e) => {
+    setSelectedFile(e.target.files[0]);
+  };
+
+  const handleUploadSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedFile) {
+      setError('Please select a PDF file to upload.');
+      return;
+    }
+    clearResults();
+    setIsLoading(true);
+
+    const uploadFormData = new FormData();
+    uploadFormData.append('resume', selectedFile);
+    uploadFormData.append('requiredSkills', requiredSkillsForUpload);
+
+    try {
+      const response = await axios.post('http://localhost:5000/upload', uploadFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setScore(response.data.fit_score);
+      setExtractedData(response.data.extracted_data); // Save extracted data
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // --- HELPER FUNCTIONS ---
+  const clearResults = () => {
+    setError('');
+    setScore(null);
+    setExtractedData(null);
+  };
+  
+  const handleApiError = (err) => {
+    setError('Failed to get a response from the server. Is it running?');
+    console.error(err);
+  }
+
   return (
     <div className="container">
       <h1>Resume Screening Assistant</h1>
-      <p>Enter the candidate's details to calculate their fit score.</p>
-      
-      <form onSubmit={handleSubmit}>
-        {/* -- Text Areas for Skills -- */}
-        <div className="form-group">
-          <label>Required Job Skills (comma-separated)</label>
-          <textarea
-            name="requiredSkills"
-            value={formData.requiredSkills}
-            onChange={handleChange}
-            rows="3"
-          />
-        </div>
-        <div className="form-group">
-          <label>Candidate's Skills (comma-separated)</label>
-          <textarea
-            name="candidateSkills"
-            value={formData.candidateSkills}
-            onChange={handleChange}
-            rows="3"
-          />
-        </div>
-        
-        {/* -- Number Inputs for other metrics -- */}
-        <div className="grid-container">
-          <div className="form-group">
-            <label>Experience (yrs)</label>
-            <input type="number" name="experience" value={formData.experience} onChange={handleChange} min="0" max="15"/>
-          </div>
-          <div className="form-group">
-            <label>Education (1-5)</label>
-            <input type="number" name="education" value={formData.education} onChange={handleChange} min="1" max="5"/>
-          </div>
-          <div className="form-group">
-            <label>CGPA</label>
-            <input type="number" name="cgpa" value={formData.cgpa} onChange={handleChange} min="0" max="10" step="0.1"/>
-          </div>
-          <div className="form-group">
-            <label>No. of Projects</label>
-            <input type="number" name="projects" value={formData.projects} onChange={handleChange} min="0" max="20"/>
-          </div>
-        </div>
 
-        <button type="submit" disabled={isLoading}>
-          {isLoading ? 'Calculating...' : 'Calculate Score'}
+      {/* --- NEW: Mode Switcher Tabs --- */}
+      <div className="mode-switcher">
+        <button onClick={() => setMode('manual')} className={mode === 'manual' ? 'active' : ''}>
+          Manual Entry
         </button>
-      </form>
+        <button onClick={() => setMode('upload')} className={mode === 'upload' ? 'active' : ''}>
+          Upload Resume
+        </button>
+      </div>
 
+      {/* --- CONDITIONAL RENDERING: Show form based on mode --- */}
+      {mode === 'manual' ? (
+        // --- MANUAL FORM ---
+        <form onSubmit={handleManualSubmit}>
+          <div className="form-group">
+            <label>Required Job Skills (comma-separated)</label>
+            <textarea name="requiredSkills" value={formData.requiredSkills} onChange={handleManualChange} rows="3" />
+          </div>
+          <div className="form-group">
+            <label>Candidate's Skills (comma-separated)</label>
+            <textarea name="candidateSkills" value={formData.candidateSkills} onChange={handleManualChange} rows="3" />
+          </div>
+          <div className="grid-container">
+            <div className="form-group"><label>Experience (yrs)</label><input type="number" name="experience" value={formData.experience} onChange={handleManualChange} min="0" max="15"/></div>
+            <div className="form-group"><label>Education (1-5)</label><input type="number" name="education" value={formData.education} onChange={handleManualChange} min="1" max="5"/></div>
+            <div className="form-group"><label>CGPA</label><input type="number" name="cgpa" value={formData.cgpa} onChange={handleManualChange} min="0" max="10" step="0.1"/></div>
+            <div className="form-group"><label>No. of Projects</label><input type="number" name="projects" value={formData.projects} onChange={handleManualChange} min="0" max="20"/></div>
+          </div>
+          <button type="submit" disabled={isLoading}>{isLoading ? 'Calculating...' : 'Calculate Score'}</button>
+        </form>
+      ) : (
+        // --- UPLOAD FORM ---
+        <form onSubmit={handleUploadSubmit}>
+          <div className="form-group">
+            <label>Required Job Skills (comma-separated)</label>
+            <textarea value={requiredSkillsForUpload} onChange={(e) => setRequiredSkillsForUpload(e.target.value)} rows="3" />
+          </div>
+          <div className="form-group">
+            <label>Upload Resume (PDF only)</label>
+            <input type="file" name="resume" onChange={handleFileChange} accept=".pdf" />
+          </div>
+          <button type="submit" disabled={isLoading}>{isLoading ? 'Analyze Resume' : 'Analyze Resume'}</button>
+        </form>
+      )}
+
+      {/* --- RESULTS SECTION (Updated to show extracted data) --- */}
+      {isLoading && <p className="loading-text">Analyzing...</p>}
       {score !== null && (
         <div className="result">
           <h2>Candidate Fit Score:</h2>
           <p className="score">{score} / 100</p>
+          {extractedData && (
+            <div className="extracted-data">
+              <h3>Extracted Data:</h3>
+              <p><strong>Skill Match:</strong> {extractedData.skill_match}% | <strong>CGPA:</strong> {extractedData.cgpa} | <strong>Projects:</strong> {extractedData.projects}</p>
+            </div>
+          )}
         </div>
       )}
       {error && <p className="error">{error}</p>}
