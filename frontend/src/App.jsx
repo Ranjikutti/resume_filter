@@ -26,7 +26,7 @@ function App() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- MANUAL FORM LOGIC (Mostly Unchanged) ---
+  // --- MANUAL FORM LOGIC ---
   const handleManualChange = (e) => {
     const { name, value } = e.target;
     setFormData({
@@ -54,7 +54,8 @@ function App() {
     const apiPayload = { ...formData, skill_match: skillMatchPercentage };
 
     try {
-      const response = await axios.post('http://localhost:5000/predict', apiPayload);
+      // --- UPDATED URL ---
+      const response = await axios.post('https://resume-filter-backend-k1km.onrender.com/predict', apiPayload);
       setScore(response.data.fit_score);
     } catch (err) {
       handleApiError(err);
@@ -63,7 +64,7 @@ function App() {
     }
   };
 
-  // --- UPLOAD FORM LOGIC (NEW) ---
+  // --- UPLOAD FORM LOGIC ---
   const handleFileChange = (e) => {
     setSelectedFile(e.target.files[0]);
   };
@@ -82,7 +83,8 @@ function App() {
     uploadFormData.append('requiredSkills', requiredSkillsForUpload);
 
     try {
-      const response = await axios.post('http://localhost:5000/upload', uploadFormData, {
+      // --- UPDATED URL ---
+      const response = await axios.post('https://resume-filter-backend-k1km.onrender.com/upload', uploadFormData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setScore(response.data.fit_score);
@@ -102,7 +104,7 @@ function App() {
   };
   
   const handleApiError = (err) => {
-    setError('Failed to get a response from the server. Is it running?');
+    setError('Failed to get a response from the server.');
     console.error(err);
   }
 
@@ -110,7 +112,7 @@ function App() {
     <div className="container">
       <h1>Resume Screening Assistant</h1>
 
-      {/* --- NEW: Mode Switcher Tabs --- */}
+      {/* --- Mode Switcher Tabs --- */}
       <div className="mode-switcher">
         <button onClick={() => setMode('manual')} className={mode === 'manual' ? 'active' : ''}>
           Manual Entry
@@ -120,7 +122,7 @@ function App() {
         </button>
       </div>
 
-      {/* --- CONDITIONAL RENDERING: Show form based on mode --- */}
+      {/* --- Show form based on mode --- */}
       {mode === 'manual' ? (
         // --- MANUAL FORM ---
         <form onSubmit={handleManualSubmit}>
@@ -151,11 +153,11 @@ function App() {
             <label>Upload Resume (PDF only)</label>
             <input type="file" name="resume" onChange={handleFileChange} accept=".pdf" />
           </div>
-          <button type="submit" disabled={isLoading}>{isLoading ? 'Analyze Resume' : 'Analyze Resume'}</button>
+          <button type="submit" disabled={isLoading}>{isLoading ? 'Analyzing...' : 'Analyze Resume'}</button>
         </form>
       )}
 
-      {/* --- RESULTS SECTION (Updated to show extracted data) --- */}
+      {/* --- RESULTS SECTION --- */}
       {isLoading && <p className="loading-text">Analyzing...</p>}
       {score !== null && (
         <div className="result">
